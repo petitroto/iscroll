@@ -49,7 +49,7 @@ var utils = (function () {
 		            el.addEventListener(type, function(e){
 		                // Bind fn as this and set first arg as event object
 		                fn.handleEvent.call(fn, e);
-		            }, !!capture)
+		            }, !!capture);
 		        }
 		    }
 		} else {

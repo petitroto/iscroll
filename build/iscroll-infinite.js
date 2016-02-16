@@ -1,4 +1,4 @@
-/*! iScroll v5.1.3 ~ (c) 2008-2014 Matteo Spinelli ~ http://cubiq.org/license */
+/*! iScroll v5.1.3 ~ (c) 2008-2016 Matteo Spinelli ~ http://cubiq.org/license */
 (function (window, document, Math) {
 var rAF = window.requestAnimationFrame	||
 	window.webkitRequestAnimationFrame	||
@@ -40,15 +40,43 @@ var utils = (function () {
 	};
 
 	me.addEvent = function (el, type, fn, capture) {
-		el.addEventListener(type, fn, !!capture);
+		if (el.addEventListener) {
+
+		    // BBOS6 doesn't support handleEvent, catch and polyfill
+		    // take code from: http://www.thecssninja.com/javascript/handleevent
+		    try{
+		        el.addEventListener(type, fn, !!capture);
+		    } catch(e) {
+		        if (typeof fn === 'object' && fn.handleEvent) {
+		            el.addEventListener(type, function(e){
+		                // Bind fn as this and set first arg as event object
+		                fn.handleEvent.call(fn, e);
+		            }, !!capture);
+		        }
+		    }
+		} else {
+		    // check if the callback is an object and contains handleEvent
+		    if(typeof fn == "object" && fn.handleEvent) {
+		        el.attachEvent("on" + type, function(){
+		            // Bind fn as this
+		            fn.handleEvent.call(fn);
+		        });
+		    } else {
+		        el.attachEvent("on" + type, fn);
+		    }
+		}
 	};
 
 	me.removeEvent = function (el, type, fn, capture) {
-		el.removeEventListener(type, fn, !!capture);
+		if (el.removeEventListener) {
+			el.removeEventListener(type, fn, !!capture);
+		} else {
+			el.detachEvent('on'+type, fn);
+		}
 	};
 
 	me.prefixPointerEvent = function (pointerEvent) {
-		return window.MSPointerEvent ? 
+		return window.MSPointerEvent ?
 			'MSPointer' + pointerEvent.charAt(9).toUpperCase() + pointerEvent.substr(10):
 			pointerEvent;
 	};
@@ -150,6 +178,30 @@ var utils = (function () {
 		}
 
 		return false;
+	};
+
+	me.preventDefault = function (event) {
+
+		// If preventDefault exists, run it on the original event
+		if ( event.preventDefault ) {
+		    event.preventDefault();
+
+		// Support: IE
+		// Otherwise set the returnValue property of the original event to false
+		} else {
+		    event.returnValue = false;
+		}
+	};
+
+	me.stopPropagation = function (event) {
+		// If stopPropagation exists, run it on the original event
+		if ( event.stopPropagation ) {
+		    event.stopPropagation();
+		}
+
+		// Support: IE
+		// Set the cancelBubble property of the original event to true
+		event.cancelBubble = true;
 	};
 
 	me.extend(me.eventType = {}, {
@@ -259,7 +311,7 @@ function IScroll (el, options) {
 		infiniteUseTransform: true,
 		deceleration: 0.004,
 
-// INSERT POINT: OPTIONS 
+// INSERT POINT: OPTIONS
 
 		startX: 0,
 		startY: 0,
@@ -320,7 +372,7 @@ function IScroll (el, options) {
 
 // INSERT POINT: NORMALIZATION
 
-	// Some defaults	
+	// Some defaults
 	this.x = 0;
 	this.y = 0;
 	this.directionX = 0;
@@ -393,7 +445,7 @@ IScroll.prototype = {
 		}
 
 		if ( this.options.preventDefault && !utils.isBadAndroid && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
-			e.preventDefault();
+			utils.preventDefault(e);
 		}
 
 		var point = e.touches ? e.touches[0] : e,
@@ -437,7 +489,7 @@ IScroll.prototype = {
 		}
 
 		if ( this.options.preventDefault ) {	// increases performance on Android? TODO: check!
-			e.preventDefault();
+			utils.preventDefault(e);
 		}
 
 		var point		= e.touches ? e.touches[0] : e,
@@ -473,7 +525,7 @@ IScroll.prototype = {
 
 		if ( this.directionLocked == 'h' ) {
 			if ( this.options.eventPassthrough == 'vertical' ) {
-				e.preventDefault();
+				utils.preventDefault(e);
 			} else if ( this.options.eventPassthrough == 'horizontal' ) {
 				this.initiated = false;
 				return;
@@ -482,7 +534,7 @@ IScroll.prototype = {
 			deltaY = 0;
 		} else if ( this.directionLocked == 'v' ) {
 			if ( this.options.eventPassthrough == 'horizontal' ) {
-				e.preventDefault();
+				utils.preventDefault(e);
 			} else if ( this.options.eventPassthrough == 'vertical' ) {
 				this.initiated = false;
 				return;
@@ -540,7 +592,7 @@ IScroll.prototype = {
 		}
 
 		if ( this.options.preventDefault && !utils.preventDefaultException(e.target, this.options.preventDefaultException) ) {
-			e.preventDefault();
+			utils.preventDefault(e);
 		}
 
 		var point = e.changedTouches ? e.changedTouches[0] : e,
@@ -842,6 +894,13 @@ IScroll.prototype = {
 			y = Math.round(y);
 			this.scrollerStyle.left = x + 'px';
 			this.scrollerStyle.top = y + 'px';
+
+			/**
+			 * if not support transform
+			 * if we want the scroller move by set left and top
+			 * the scroller should be position absolute
+			 */
+			this.scrollerStyle.position = 'absolute';
 		}
 
 		this.x = x;
@@ -922,8 +981,8 @@ IScroll.prototype = {
 			return;
 		}
 
-		e.preventDefault();
-		e.stopPropagation();
+		utils.preventDefault(e);
+		utils.stopPropagation(e);
 
 		var wheelDeltaX, wheelDeltaY,
 			newX, newY,
@@ -1523,6 +1582,7 @@ IScroll.prototype = {
 
 
 	handleEvent: function (e) {
+		e = e || window.event;
 		switch ( e.type ) {
 			case 'touchstart':
 			case 'pointerdown':
@@ -1566,8 +1626,8 @@ IScroll.prototype = {
 				break;
 			case 'click':
 				if ( !e._constructed ) {
-					e.preventDefault();
-					e.stopPropagation();
+					utils.preventDefault(e);
+					utils.stopPropagation(e);
 				}
 				break;
 		}
